@@ -1,0 +1,134 @@
+package com.example.shapeshifter;
+
+import android.graphics.Canvas;
+import android.view.SurfaceHolder;
+import android.os.SystemClock;
+
+public class MainThread extends Thread {
+
+    // FPS ve performans ayarları
+    private static final int TARGET_FPS = 60; // Hedef FPS
+    private static final long TARGET_FRAMETIME = 1000 / TARGET_FPS; // Milisaniye cinsinden frame süresi
+
+    // Performans izleme değişkenleri
+    private long totalFrames;
+    private long totalTimeMs;
+    private double actualFps;
+    private long lastFpsUpdateTime;
+    private static final int FPS_UPDATE_INTERVAL = 500; // FPS hesaplama sıklığı (ms)
+    private boolean isFixedTimeStep = true; // Sabit zaman aralığı kullanımı
+
+    // Oyun durumu değişkenleri
+    private boolean running;
+    private boolean paused;
+    private SurfaceHolder surfaceHolder;
+    private GameView gameView;
+    private Canvas canvas;
+
+    // Delta time hesaplama değişkenleri
+    private long lastUpdateTime;
+    private float deltaTime; // saniye cinsinden iki frame arası geçen süre
+
+    public MainThread(SurfaceHolder surfaceHolder, GameView gameView) {
+        super();
+        this.surfaceHolder = surfaceHolder;
+        this.gameView = gameView;
+        this.totalFrames = 0;
+        this.totalTimeMs = 0;
+        this.lastFpsUpdateTime = SystemClock.elapsedRealtime();
+        this.lastUpdateTime = SystemClock.elapsedRealtime();
+    }
+
+    public void setRunning(boolean running) {
+        this.running = running;
+    }
+
+    public void setPaused(boolean paused) {
+        this.paused = paused;
+    }
+
+    public double getCurrentFps() {
+        return actualFps;
+    }
+
+    public float getDeltaTime() {
+        return deltaTime;
+    }
+
+    public void setFixedTimeStep(boolean fixedTimeStep) {
+        this.isFixedTimeStep = fixedTimeStep;
+    }
+
+    @Override
+    public void run() {
+        long startTime;
+        long timeMillis;
+        long waitTime;
+        long frameCount = 0;
+        long fpsStartTime = SystemClock.elapsedRealtime();
+
+        // Başlangıç değerlerini ayarla
+        lastUpdateTime = SystemClock.elapsedRealtime();
+
+        while (running) {
+            startTime = SystemClock.elapsedRealtime();
+            canvas = null;
+
+            try {
+                // SurfaceHolder kullanılabilir mi kontrol et
+                if (surfaceHolder.getSurface().isValid()) {
+                    canvas = surfaceHolder.lockCanvas();
+
+                    if (canvas != null) {
+                        synchronized (surfaceHolder) {
+                            // Delta time hesapla (saniye cinsinden)
+                            long currentTime = SystemClock.elapsedRealtime();
+                            deltaTime = (currentTime - lastUpdateTime) / 1000.0f;
+
+                            // Aşırı büyük delta değerlerini önle (örn. uygulama arka plana alındığında)
+                            if (deltaTime > 0.1f) {
+                                deltaTime = 0.016f; // ~60 FPS
+                            }
+
+                            lastUpdateTime = currentTime;
+
+                            // Sadece oyun duraklatılmamışsa update et
+                            if (!paused) {
+                                // Delta time'ı GameView'a aktar
+                                this.gameView.setDeltaTime(deltaTime);
+
+                                // Oyun mantığını güncelle
+                                this.gameView.update();
+                            }
+
+                            // Her durumda çiz (duraklama ekranı da çizilmeli)
+                            this.gameView.draw(canvas);
+
+                            // FPS hesaplama
+                            frameCount++;
+                            totalFrames++;
+
+                            long now = SystemClock.elapsedRealtime();
+                            if (now - lastFpsUpdateTime >= FPS_UPDATE_INTERVAL) {
+                                actualFps = 1000.0 * frameCount / (now - fpsStartTime);
+                                frameCount = 0;
+                                fpsStartTime = now;
+                                lastFpsUpdateTime = now;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                if (canvas != null) {
+                    try {
+                        surfaceHolder.unlockCanvasAndPost(canvas);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+    }
+}
